@@ -4,10 +4,10 @@ import { PrismaClient } from "@/generated/prisma/client";
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
 function createPrismaClient(): PrismaClient {
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) {
-    throw new Error("DATABASE_URL não está configurada.");
-  }
+  const connectionString =
+    process.env.DATABASE_URL ??
+    "postgresql://build:build@127.0.0.1:5432/build?schema=public";
+
   const adapter = new PrismaPg({ connectionString });
   return new PrismaClient({ adapter });
 }
