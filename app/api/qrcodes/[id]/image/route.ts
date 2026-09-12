@@ -1,5 +1,6 @@
 import QRCode from "qrcode";
 import { getAuthClaims } from "@/lib/auth";
+import { getActiveSubscription } from "@/lib/plans";
 import { prisma } from "@/lib/prisma";
 import { getPublicOrigin } from "@/lib/public-url";
 
@@ -24,12 +25,7 @@ function qrDarkColor(value: string | null | undefined): string {
 }
 
 function escapeXml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 }
 
 function compactText(value: string, maxLength: number): string {
@@ -39,11 +35,7 @@ function compactText(value: string, maxLength: number): string {
 }
 
 function safeFileName(value: string): string {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9-_]+/g, "-")
-    .replace(/^-+|-+$/g, "") || "qrcode";
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9-_]+/g, "-").replace(/^-+|-+$/g, "") || "qrcode";
 }
 
 function safeImageUrl(value: string | null): string | null {
@@ -61,34 +53,47 @@ export async function GET(request: Request, { params }: Context) {
   if (!auth) return new Response("Não autenticado", { status: 401 });
 
   const { id } = await params;
-  const item = await prisma.qRCode.findFirst({
-    where: { id, userId: auth.userId },
-    select: {
-      name: true,
-      slug: true,
-      foregroundColor: true,
-      accentColor: true,
-      frameTitle: true,
-      frameText: true,
-      brandName: true,
-      logoUrl: true,
-      customDomain: { select: { host: true, verifiedAt: true } },
-    },
-  });
+  const [item, subscription] = await Promise.all([
+    prisma.qRCode.findFirst({
+      where: { id, userId: auth.userId },
+      select: {
+        name: true,
+        slug: true,
+        foregroundColor: true,
+        accentColor: true,
+        frameTitle: true,
+        frameText: true,
+        brandName: true,
+        logoUrl: true,
+        customDomain: { select: { host: true, verifiedAt: true } },
+      },
+    }),
+    getActiveSubscription(auth.userId),
+  ]);
   if (!item) return new Response("QR Code não encontrado", { status: 404 });
 
   const requestUrl = new URL(request.url);
+  const canBrand = subscription.plan.customBranding;
+  const canUseCustomDomain = subscription.plan.customDomains;
   const defaultOrigin = getPublicOrigin(request).replace(/\/$/, "");
-  const publicOrigin = item.customDomain?.verifiedAt ? `https://${item.customDomain.host}` : defaultOrigin;
+  const publicOrigin = canUseCustomDomain && item.customDomain?.verifiedAt ? `https://${item.customDomain.host}` : defaultOrigin;
   const redirectUrl = `${publicOrigin}/r/${item.slug}`;
   const variant = requestUrl.searchParams.get("variant") === "card" ? "card" : "plain";
   const download = requestUrl.searchParams.get("download") === "1";
-  const foreground = qrDarkColor(requestUrl.searchParams.get("foreground") || item.foregroundColor);
-  const accent = sanitizeHexColor(requestUrl.searchParams.get("accent") || item.accentColor, "#10B981");
-  const title = compactText(requestUrl.searchParams.get("title") || item.frameTitle || item.name, 44);
-  const subtitle = compactText(requestUrl.searchParams.get("subtitle") || item.frameText || "Aponte a câmera do celular para acessar", 72);
-  const brand = compactText(requestUrl.searchParams.get("brand") || item.brandName || "QR Metrics Pro", 32);
-  const logo = safeImageUrl(requestUrl.searchParams.get("logo") || item.logoUrl);
+
+  const foreground = canBrand
+    ? qrDarkColor(requestUrl.searchParams.get("foreground") || item.foregroundColor)
+    : "#111827";
+  const accent = canBrand
+    ? sanitizeHexColor(requestUrl.searchParams.get("accent") || item.accentColor, "#10B981")
+    : "#10B981";
+  const title = compactText(canBrand ? requestUrl.searchParams.get("title") || item.frameTitle || item.name : item.name, 44);
+  const subtitle = compactText(
+    canBrand ? requestUrl.searchParams.get("subtitle") || item.frameText || "Aponte a câmera do celular para acessar" : "Aponte a câmera do celular para acessar",
+    72,
+  );
+  const brand = compactText(canBrand ? requestUrl.searchParams.get("brand") || item.brandName || "QR Metrics Pro" : "QR Metrics Pro", 32);
+  const logo = canBrand ? safeImageUrl(requestUrl.searchParams.get("logo") || item.logoUrl) : null;
 
   const plainSvg = await QRCode.toString(redirectUrl, {
     type: "svg",
