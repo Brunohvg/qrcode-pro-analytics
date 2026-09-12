@@ -33,7 +33,6 @@ export async function GET(_request: Request, { params }: Context) {
   ]);
 
   if (!item) return NextResponse.json({ success: false, message: "QR Code não encontrado." }, { status: 404 });
-
   const { passwordHash, ...safeItem } = item;
   return NextResponse.json({ success: true, item: { ...safeItem, passwordProtected: Boolean(passwordHash) }, plan: subscription.plan });
 }
@@ -52,9 +51,7 @@ export async function PATCH(request: Request, { params }: Context) {
   if (!existing) return NextResponse.json({ success: false, message: "QR Code não encontrado." }, { status: 404 });
 
   const parsed = updateQrSchema.safeParse(await request.json());
-  if (!parsed.success) {
-    return NextResponse.json({ success: false, message: "Dados inválidos.", errors: parsed.error.flatten().fieldErrors }, { status: 400 });
-  }
+  if (!parsed.success) return NextResponse.json({ success: false, message: "Dados inválidos.", errors: parsed.error.flatten().fieldErrors }, { status: 400 });
 
   const input = parsed.data;
   const plan = subscription.plan;
@@ -64,45 +61,31 @@ export async function PATCH(request: Request, { params }: Context) {
     return NextResponse.json({ success: false, message: "Seu plano não permite alterar links dinâmicos." }, { status: 403 });
   }
 
-  const usesUtm = input.utmSource !== undefined || input.utmMedium !== undefined || input.utmCampaign !== undefined;
-  if (usesUtm && !advanced) {
-    return NextResponse.json({ success: false, message: "UTM automático está disponível a partir do plano Pro." }, { status: 403 });
-  }
+  const usesUtm = Boolean(input.utmSource || input.utmMedium || input.utmCampaign);
+  if (usesUtm && !advanced) return NextResponse.json({ success: false, message: "UTM automático está disponível a partir do plano Pro." }, { status: 403 });
+  if (input.notifyAtScans != null && !advanced) return NextResponse.json({ success: false, message: "Alertas por meta de scans estão disponíveis a partir do plano Pro." }, { status: 403 });
 
-  if (input.notifyAtScans !== undefined && !advanced) {
-    return NextResponse.json({ success: false, message: "Alertas por meta de scans estão disponíveis a partir do plano Pro." }, { status: 403 });
-  }
-
-  if (input.campaignId !== undefined && !plan.campaigns) {
-    return NextResponse.json({ success: false, message: "Campanhas estão disponíveis a partir do plano Pro." }, { status: 403 });
-  }
+  if (input.campaignId && !plan.campaigns) return NextResponse.json({ success: false, message: "Campanhas estão disponíveis a partir do plano Pro." }, { status: 403 });
   if (input.campaignId) {
     const campaign = await prisma.campaign.findFirst({ where: { id: input.campaignId, userId: auth.userId }, select: { id: true } });
     if (!campaign) return NextResponse.json({ success: false, message: "Campanha inválida." }, { status: 400 });
   }
 
-  const usesScheduling = input.activeFrom !== undefined || input.expiresAt !== undefined || input.fallbackUrl !== undefined;
-  if (usesScheduling && !plan.scheduledLinks) {
-    return NextResponse.json({ success: false, message: "Agendamento e expiração estão disponíveis a partir do plano Pro." }, { status: 403 });
-  }
+  const usesScheduling = Boolean(input.activeFrom || input.expiresAt || input.fallbackUrl);
+  if (usesScheduling && !plan.scheduledLinks) return NextResponse.json({ success: false, message: "Agendamento e expiração estão disponíveis a partir do plano Pro." }, { status: 403 });
 
-  if ((input.password !== undefined || input.passwordPrompt !== undefined) && !plan.passwordProtection) {
+  if ((Boolean(input.password) || Boolean(input.passwordPrompt)) && !plan.passwordProtection) {
     return NextResponse.json({ success: false, message: "Proteção por senha está disponível a partir do plano Pro." }, { status: 403 });
   }
 
-  const usesSmartRedirect = input.iosUrl !== undefined || input.androidUrl !== undefined || input.desktopUrl !== undefined || input.countryRules !== undefined;
-  if (usesSmartRedirect && !plan.smartRedirect) {
-    return NextResponse.json({ success: false, message: "Smart Redirect está disponível no plano Business." }, { status: 403 });
-  }
+  const countryRuleCount = input.countryRules && typeof input.countryRules === "object" ? Object.keys(input.countryRules).length : 0;
+  const usesSmartRedirect = Boolean(input.iosUrl || input.androidUrl || input.desktopUrl || countryRuleCount);
+  if (usesSmartRedirect && !plan.smartRedirect) return NextResponse.json({ success: false, message: "Smart Redirect está disponível no plano Business." }, { status: 403 });
 
-  const usesBranding = input.foregroundColor !== undefined || input.accentColor !== undefined || input.frameTitle !== undefined || input.frameText !== undefined || input.brandName !== undefined || input.logoUrl !== undefined;
-  if (usesBranding && !plan.customBranding) {
-    return NextResponse.json({ success: false, message: "Personalização avançada está disponível a partir do plano Pro." }, { status: 403 });
-  }
+  const usesBranding = Boolean(input.foregroundColor || input.accentColor || input.frameTitle || input.frameText || input.brandName || input.logoUrl);
+  if (usesBranding && !plan.customBranding) return NextResponse.json({ success: false, message: "Personalização avançada está disponível a partir do plano Pro." }, { status: 403 });
 
-  if (input.customDomainId !== undefined && !plan.customDomains) {
-    return NextResponse.json({ success: false, message: "Domínio próprio está disponível no plano Business." }, { status: 403 });
-  }
+  if (input.customDomainId && !plan.customDomains) return NextResponse.json({ success: false, message: "Domínio próprio está disponível no plano Business." }, { status: 403 });
   if (input.customDomainId) {
     const domain = await prisma.customDomain.findFirst({ where: { id: input.customDomainId, userId: auth.userId, verifiedAt: { not: null } }, select: { id: true } });
     if (!domain) return NextResponse.json({ success: false, message: "Domínio não verificado ou inválido." }, { status: 400 });
@@ -112,9 +95,7 @@ export async function PATCH(request: Request, { params }: Context) {
   const expiresAt = parseDate(input.expiresAt);
   if (input.activeFrom && activeFrom === undefined) return NextResponse.json({ success: false, message: "Data de início inválida." }, { status: 400 });
   if (input.expiresAt && expiresAt === undefined) return NextResponse.json({ success: false, message: "Data de expiração inválida." }, { status: 400 });
-  if (activeFrom instanceof Date && expiresAt instanceof Date && activeFrom >= expiresAt) {
-    return NextResponse.json({ success: false, message: "A expiração deve ocorrer depois da data de início." }, { status: 400 });
-  }
+  if (activeFrom instanceof Date && expiresAt instanceof Date && activeFrom >= expiresAt) return NextResponse.json({ success: false, message: "A expiração deve ocorrer depois da data de início." }, { status: 400 });
 
   let passwordHash: string | null | undefined;
   if (input.password !== undefined) passwordHash = input.password ? await bcrypt.hash(input.password, 12) : null;
