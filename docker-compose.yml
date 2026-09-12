@@ -1,0 +1,36 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: qrcode_pro
+      POSTGRES_USER: ${SERVICE_LOWERCASEUSER_POSTGRES}
+      POSTGRES_PASSWORD: ${SERVICE_PASSWORD_64_POSTGRES}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${SERVICE_LOWERCASEUSER_POSTGRES} -d qrcode_pro"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${SERVICE_LOWERCASEUSER_POSTGRES}:${SERVICE_PASSWORD_64_POSTGRES}@postgres:5432/qrcode_pro?schema=public
+      AUTH_SECRET: ${SERVICE_REALBASE64_64_AUTH}
+      NEXT_PUBLIC_APP_URL: ${SERVICE_URL_APP_3000}
+      SERVICE_URL_APP_3000: /
+    expose:
+      - "3000"
+
+volumes:
+  postgres-data:
