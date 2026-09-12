@@ -21,8 +21,10 @@ export async function ensureFreeSubscription(userId: string) {
   await prisma.subscription.updateMany({
     where: {
       userId,
-      status: "ACTIVE",
-      activeUntil: { lte: now },
+      OR: [
+        { status: "ACTIVE", activeUntil: { lte: now } },
+        { status: "PAST_DUE", graceUntil: { lte: now } },
+      ],
     },
     data: { status: "EXPIRED" },
   });
@@ -30,8 +32,16 @@ export async function ensureFreeSubscription(userId: string) {
   const current = await prisma.subscription.findFirst({
     where: {
       userId,
-      status: "ACTIVE",
-      OR: [{ activeUntil: null }, { activeUntil: { gt: now } }],
+      OR: [
+        {
+          status: "ACTIVE",
+          OR: [{ activeUntil: null }, { activeUntil: { gt: now } }],
+        },
+        {
+          status: "PAST_DUE",
+          graceUntil: { gt: now },
+        },
+      ],
     },
     orderBy: { createdAt: "desc" },
     include: { plan: true },
@@ -52,7 +62,12 @@ export async function ensureFreeSubscription(userId: string) {
   });
 
   return prisma.subscription.create({
-    data: { userId, planId: freePlan.id, status: "ACTIVE" },
+    data: {
+      userId,
+      planId: freePlan.id,
+      status: "ACTIVE",
+      provider: "ADMIN",
+    },
     include: { plan: true },
   });
 }

@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
 
 const plans = [
   {
@@ -39,39 +38,12 @@ const plans = [
 ] as const;
 
 export default function PlansClient() {
-  const [loading, setLoading] = useState("");
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-
-  async function choose(planName: string) {
-    if (planName === "Enterprise") return;
-    setLoading(planName); setMessage(""); setError("");
-    try {
-      const response = await fetch("/api/plans/change", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ planName }),
-      });
-      const data = await response.json();
-      if (response.status === 401) { setError("Faça login primeiro para ativar o período de teste."); return; }
-      if (!response.ok) throw new Error(data.message || "Falha ao alterar plano.");
-      setMessage(data.message);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao alterar plano.");
-    } finally {
-      setLoading("");
-    }
-  }
-
   return <main className="shell py-14 md:py-20">
     <div className="text-center max-w-3xl mx-auto">
       <span className="badge">Planos para cada etapa</span>
       <h1 className="text-4xl md:text-5xl font-black mt-4">Comece grátis. Cresça quando o QR virar canal de negócio.</h1>
-      <p className="muted mt-4 text-lg">QR dinâmico, analytics, campanhas e automação em uma única plataforma. Pro e Business podem ser testados por 30 dias no ambiente atual.</p>
+      <p className="muted mt-4 text-lg">Planos pagos usam Mercado Pago para cobrança recorrente. PIX também pode ser disponibilizado como alternativa conforme a configuração da plataforma.</p>
     </div>
-
-    {message && <div className="max-w-xl mx-auto mt-7 rounded-xl border border-emerald-400/30 bg-emerald-400/10 p-4 text-center text-emerald-200">{message} <Link href="/dashboard" className="font-bold underline">Abrir dashboard</Link></div>}
-    {error && <div className="max-w-xl mx-auto mt-7 rounded-xl border border-rose-400/30 bg-rose-400/10 p-4 text-center text-rose-200">{error} <Link href="/login" className="font-bold underline">Entrar</Link></div>}
 
     <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-5 mt-10">
       {plans.map((plan) => <article key={plan.name} className={`card p-7 relative flex flex-col ${plan.highlight ? "ring-2 ring-emerald-300/70" : ""}`}>
@@ -80,10 +52,17 @@ export default function PlansClient() {
         <p className="muted text-sm mt-2 min-h-16 leading-relaxed">{plan.description}</p>
         <div className="mt-4"><span className={`${plan.name === "Enterprise" ? "text-3xl" : "text-4xl"} font-black`}>{plan.price}</span><span className="muted">{plan.suffix}</span></div>
         <ul className="mt-6 space-y-3 text-sm flex-1">{plan.features.map((feature) => <li key={feature} className="flex gap-2"><span className="text-emerald-300">✓</span><span>{feature}</span></li>)}</ul>
-        {plan.name === "Enterprise" ? <button disabled className="btn-secondary w-full mt-7">Contratação sob consulta</button> : <button onClick={()=>void choose(plan.name)} disabled={!!loading} className={plan.highlight ? "btn-primary w-full mt-7" : "btn-secondary w-full mt-7"}>{loading === plan.name ? "Ativando..." : plan.name === "Gratuito" ? "Usar Gratuito" : "Testar 30 dias"}</button>}
+        {plan.name === "Enterprise"
+          ? <button disabled className="btn-secondary w-full mt-7">Contratação sob consulta</button>
+          : plan.name === "Gratuito"
+            ? <Link href="/register" className="btn-secondary w-full mt-7 text-center">Começar grátis</Link>
+            : <Link href={`/billing?plan=${plan.name}`} className={plan.highlight ? "btn-primary w-full mt-7 text-center" : "btn-secondary w-full mt-7 text-center"}>Assinar {plan.name}</Link>}
       </article>)}
     </div>
 
-    <p className="muted text-xs text-center mt-7">A cobrança recorrente ainda não está conectada; os testes Pro e Business são ativados por 30 dias sem pagamento.</p>
+    <div className="max-w-3xl mx-auto mt-8 card p-5 text-sm">
+      <strong>Como a liberação funciona:</strong>
+      <span className="muted"> o cliente mantém o plano atual enquanto o pagamento está pendente. Quando o Mercado Pago confirma a assinatura, os recursos são liberados automaticamente. Em caso de falha recorrente, existe período de carência antes do downgrade. PIX fixo, quando habilitado, passa por aprovação no painel administrativo.</span>
+    </div>
   </main>;
 }

@@ -13,6 +13,7 @@ enum UserRole {
 }
 
 enum SubscriptionStatus {
+  PENDING
   ACTIVE
   CANCELED
   EXPIRED
@@ -30,6 +31,25 @@ enum NotificationType {
   SYSTEM
 }
 
+enum BillingProvider {
+  MERCADO_PAGO
+  MANUAL_PIX
+  ADMIN
+}
+
+enum PaymentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELED
+  REFUNDED
+  IN_REVIEW
+}
+
+enum BillingCycle {
+  MONTHLY
+}
+
 model User {
   id            String         @id @default(cuid())
   email         String         @unique
@@ -42,9 +62,10 @@ model User {
   campaigns     Campaign[]
   notifications Notification[]
   customDomains CustomDomain[]
-  apiKeys        ApiKey[]
-  webhooks       Webhook[]
-  integration    Integration?
+  apiKeys       ApiKey[]
+  webhooks      Webhook[]
+  integration   Integration?
+  payments      Payment[]
 
   @@index([createdAt])
 }
@@ -71,23 +92,94 @@ model Plan {
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
   subscriptions      Subscription[]
+  payments           Payment[]
 }
 
 model Subscription {
-  id          String             @id @default(cuid())
-  userId      String
-  planId      String
-  status      SubscriptionStatus @default(ACTIVE)
-  activeUntil DateTime?
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
-  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  plan        Plan               @relation(fields: [planId], references: [id], onDelete: Restrict)
+  id                     String             @id @default(cuid())
+  userId                 String
+  planId                 String
+  status                 SubscriptionStatus @default(ACTIVE)
+  activeUntil            DateTime?
+  provider               BillingProvider?
+  providerSubscriptionId String?            @unique
+  externalReference      String?            @unique
+  billingCycle           BillingCycle       @default(MONTHLY)
+  checkoutUrl            String?
+  currentPeriodStart     DateTime?
+  currentPeriodEnd       DateTime?
+  graceUntil             DateTime?
+  cancelAtPeriodEnd      Boolean            @default(false)
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+  user                   User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan                   Plan               @relation(fields: [planId], references: [id], onDelete: Restrict)
+  payments               Payment[]
 
   @@index([userId])
   @@index([planId])
   @@index([status])
   @@index([userId, status])
+  @@index([provider, status])
+}
+
+model Payment {
+  id                String          @id @default(cuid())
+  userId            String
+  planId            String
+  subscriptionId    String?
+  provider          BillingProvider
+  providerPaymentId String?         @unique
+  externalReference String
+  status            PaymentStatus   @default(PENDING)
+  providerStatus    String?
+  method            String?
+  amount            Decimal         @db.Decimal(10, 2)
+  currency          String          @default("BRL")
+  description       String?
+  dueAt             DateTime?
+  paidAt            DateTime?
+  reviewedAt        DateTime?
+  reviewNote        String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan              Plan            @relation(fields: [planId], references: [id], onDelete: Restrict)
+  subscription      Subscription?   @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([externalReference])
+  @@index([subscriptionId])
+  @@index([status, createdAt])
+  @@index([provider, status])
+}
+
+model BillingSettings {
+  id                    String   @id @default("default")
+  mercadoPagoEnabled    Boolean  @default(true)
+  manualPixEnabled      Boolean  @default(false)
+  pixKey                String?
+  pixKeyType            String?
+  pixRecipientName      String?
+  pixCity               String?
+  manualPixInstructions String?
+  gracePeriodDays       Int      @default(3)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model BillingWebhookEvent {
+  id              String          @id @default(cuid())
+  provider        BillingProvider
+  providerEventId String          @unique
+  eventType       String
+  resourceId      String?
+  payload         Json
+  processedAt     DateTime?
+  createdAt       DateTime        @default(now())
+
+  @@index([provider, createdAt])
+  @@index([processedAt])
 }
 
 model Campaign {
