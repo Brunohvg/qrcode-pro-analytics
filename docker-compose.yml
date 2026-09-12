@@ -27,7 +27,6 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgresql://${SERVICE_LOWERCASEUSER_POSTGRES}:${SERVICE_PASSWORD_64_POSTGRES}@postgres:5432/qrcode_pro?schema=public
       AUTH_SECRET: ${SERVICE_REALBASE64_64_AUTH}
-      NEXT_PUBLIC_APP_URL: ${SERVICE_URL_APP_3000}
       SERVICE_URL_APP_3000: /
     expose:
       - "3000"
