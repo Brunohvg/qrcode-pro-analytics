@@ -12,6 +12,9 @@ export async function POST(request: Request) {
 
   const parsed = changePlanSchema.safeParse(await request.json());
   if (!parsed.success) return NextResponse.json({ success: false, message: "Plano inválido." }, { status: 400 });
+  if (parsed.data.planName === "Enterprise") {
+    return NextResponse.json({ success: false, message: "O plano Enterprise é contratado sob consulta e não pode ser ativado pelo checkout de demonstração." }, { status: 400 });
+  }
 
   const plan = await prisma.plan.findUnique({ where: { name: parsed.data.planName } });
   if (!plan) return NextResponse.json({ success: false, message: "Plano indisponível." }, { status: 404 });
@@ -34,7 +37,7 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     success: true,
-    message: `Checkout simulado concluído. Plano ${subscription.plan.name} ativado.`,
+    message: `Checkout simulado concluído. Plano ${subscription.plan.name} ativado por 30 dias.`,
     plan: { name: subscription.plan.name, price: subscription.plan.price.toString() },
   });
 }
