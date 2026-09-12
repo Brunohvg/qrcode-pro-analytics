@@ -156,7 +156,7 @@ async function syncPayment(id: string) {
       amount: payment.transaction_amount ?? local.plan.price,
       currency: payment.currency_id ?? "BRL",
       description: `QR Metrics Pro - ${local.plan.name}`,
-      paidAt: payment.date_approved ? new Date(payment.date_approved) : mapped === "APPROVED" ? new Date(payment.date_approved) : null,
+      paidAt: payment.date_approved ? new Date(payment.date_approved) : mapped === "APPROVED" ? new Date() : null,
     },
   });
 
