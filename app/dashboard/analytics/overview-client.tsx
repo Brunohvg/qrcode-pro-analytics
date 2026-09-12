@@ -134,7 +134,7 @@ export default function AnalyticsOverviewClient() {
 
   const chartMax = useMemo(() => Math.max(...(data?.byDay.map((item) => item.count) ?? [1]), 1), [data]);
   const selectValue = data?.period.days === null ? "all" : String(data?.period.days ?? period);
-  const growth = data?.summary.growthPercent;
+  const growth = data?.summary.growthPercent ?? null;
 
   return (
     <main className="shell py-10 md:py-14">
