@@ -3,9 +3,7 @@ import { getAuthClaims } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import PrintQrClient from "./print-client";
 
-type PageProps = {
-  params: Promise<{ id: string }>;
-};
+type PageProps = { params: Promise<{ id: string }> };
 
 export const dynamic = "force-dynamic";
 
@@ -22,10 +20,15 @@ export default async function PrintQrPage({ params }: PageProps) {
       originalUrl: true,
       slug: true,
       scanCount: true,
+      foregroundColor: true,
+      accentColor: true,
+      frameTitle: true,
+      frameText: true,
+      brandName: true,
+      logoUrl: true,
     },
   });
 
   if (!item) notFound();
-
   return <PrintQrClient item={item} />;
 }
