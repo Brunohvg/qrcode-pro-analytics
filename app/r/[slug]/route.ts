@@ -1,4 +1,5 @@
 import { after, NextResponse } from "next/server";
+import { getActiveSubscription, isAdvancedPlan } from "@/lib/plans";
 import { prisma } from "@/lib/prisma";
 import { detectBrowser, detectCountry, detectDevice } from "@/lib/request";
 import { qrPasswordPage, qrStatusPage } from "@/lib/qr-html";
@@ -82,40 +83,40 @@ export async function GET(request: Request, { params }: Context) {
         desktopUrl: true,
         countryRules: true,
         notifyAtScans: true,
-        lastNotifiedAtCount: true,
       },
     });
-    if (!qr) return htmlResponse(qrStatusPage({ title: "QR Code não encontrado", message: "Este código não existe ou foi removido.", status: "Indisponível" }), 404);
-
-    const now = new Date();
-    const inactive = (qr.activeFrom && now < qr.activeFrom) || (qr.expiresAt && now > qr.expiresAt);
-    if (inactive) {
-      const fallback = validHttpUrl(qr.fallbackUrl);
-      if (fallback) return NextResponse.redirect(fallback, 302);
-      const notStarted = Boolean(qr.activeFrom && now < qr.activeFrom);
-      return htmlResponse(
-        qrStatusPage({
-          title: notStarted ? "Campanha ainda não começou" : "Campanha encerrada",
-          message: notStarted
-            ? "Este QR Code foi programado para começar em outra data."
-            : "O período de validade deste QR Code terminou.",
-          status: notStarted ? "Agendado" : "Expirado",
-        }),
-        410,
-      );
+    if (!qr) {
+      return htmlResponse(qrStatusPage({ title: "QR Code não encontrado", message: "Este código não existe ou foi removido.", status: "Indisponível" }), 404);
     }
 
-    if (qr.passwordHash) {
+    const subscription = await getActiveSubscription(qr.userId);
+    const plan = subscription.plan;
+    const advanced = isAdvancedPlan(plan.name);
+
+    if (plan.scheduledLinks) {
+      const now = new Date();
+      const inactive = (qr.activeFrom && now < qr.activeFrom) || (qr.expiresAt && now > qr.expiresAt);
+      if (inactive) {
+        const fallback = validHttpUrl(qr.fallbackUrl);
+        if (fallback) return NextResponse.redirect(fallback, 302);
+        const notStarted = Boolean(qr.activeFrom && now < qr.activeFrom);
+        return htmlResponse(
+          qrStatusPage({
+            title: notStarted ? "Campanha ainda não começou" : "Campanha encerrada",
+            message: notStarted ? "Este QR Code foi programado para começar em outra data." : "O período de validade deste QR Code terminou.",
+            status: notStarted ? "Agendado" : "Expirado",
+          }),
+          410,
+        );
+      }
+    }
+
+    if (plan.passwordProtection && qr.passwordHash) {
       const unlocked = verifyQrUnlockToken(slug, cookieValue(request, qrUnlockCookieName(slug)));
       if (!unlocked) {
         const hasError = new URL(request.url).searchParams.get("error") === "1";
         return htmlResponse(
-          qrPasswordPage({
-            slug,
-            name: qr.name,
-            prompt: qr.passwordPrompt,
-            error: hasError ? "Senha incorreta. Tente novamente." : undefined,
-          }),
+          qrPasswordPage({ slug, name: qr.name, prompt: qr.passwordPrompt, error: hasError ? "Senha incorreta. Tente novamente." : undefined }),
           401,
         );
       }
@@ -126,12 +127,16 @@ export async function GET(request: Request, { params }: Context) {
     const browser = detectBrowser(userAgent);
     const country = detectCountry(request.headers);
 
-    const countryUrl = countryDestination(qr.countryRules, country);
-    const deviceUrl = device === "IOS" ? qr.iosUrl : device === "ANDROID" ? qr.androidUrl : qr.desktopUrl;
-    const destination = validHttpUrl(countryUrl) ?? validHttpUrl(deviceUrl) ?? validHttpUrl(qr.originalUrl);
-    if (!destination) return htmlResponse(qrStatusPage({ title: "Destino inválido", message: "O responsável por este QR Code precisa revisar a URL configurada.", status: "Erro de configuração" }), 500);
+    const smartCountryUrl = plan.smartRedirect ? countryDestination(qr.countryRules, country) : null;
+    const smartDeviceUrl = plan.smartRedirect
+      ? device === "IOS" ? qr.iosUrl : device === "ANDROID" ? qr.androidUrl : qr.desktopUrl
+      : null;
+    const destination = validHttpUrl(smartCountryUrl) ?? validHttpUrl(smartDeviceUrl) ?? validHttpUrl(qr.originalUrl);
+    if (!destination) {
+      return htmlResponse(qrStatusPage({ title: "Destino inválido", message: "O responsável por este QR Code precisa revisar a URL configurada.", status: "Erro de configuração" }), 500);
+    }
 
-    const finalDestination = applyUtm(destination, qr);
+    const finalDestination = advanced ? applyUtm(destination, qr) : destination;
 
     try {
       const result = await prisma.$transaction(async (tx) => {
@@ -146,6 +151,7 @@ export async function GET(request: Request, { params }: Context) {
         });
 
         if (
+          advanced &&
           updated.notifyAtScans &&
           updated.scanCount >= updated.notifyAtScans &&
           updated.lastNotifiedAtCount < updated.notifyAtScans
@@ -165,21 +171,23 @@ export async function GET(request: Request, { params }: Context) {
         return metric;
       });
 
-      after(async () => {
-        await dispatchScanEvents({
-          id: result.id,
-          qrCodeId: qr.id,
-          qrName: qr.name,
-          userId: qr.userId,
-          slug: qr.slug,
-          destination: finalDestination.toString(),
-          device,
-          browser,
-          country,
-          scannedAt: result.scannedAt.toISOString(),
-          userAgent,
+      if (plan.webhooks || plan.integrations) {
+        after(async () => {
+          await dispatchScanEvents({
+            id: result.id,
+            qrCodeId: qr.id,
+            qrName: qr.name,
+            userId: qr.userId,
+            slug: qr.slug,
+            destination: finalDestination.toString(),
+            device,
+            browser,
+            country,
+            scannedAt: result.scannedAt.toISOString(),
+            userAgent,
+          });
         });
-      });
+      }
     } catch (metricError) {
       console.error("QR_METRIC_ERROR", metricError);
     }
