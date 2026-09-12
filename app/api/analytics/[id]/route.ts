@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuthClaims } from "@/lib/auth";
-import { getActiveSubscription, isAdvancedPlan } from "@/lib/plans";
+import { getActiveSubscription } from "@/lib/plans";
 import { prisma } from "@/lib/prisma";
 
 type Context = { params: Promise<{ id: string }> };
@@ -9,9 +9,6 @@ export async function GET(_request: Request, { params }: Context) {
   const auth = await getAuthClaims();
   if (!auth) return NextResponse.json({ success: false }, { status: 401 });
   const subscription = await getActiveSubscription(auth.userId);
-  if (!isAdvancedPlan(subscription.plan.name)) {
-    return NextResponse.json({ success: false, message: "Analytics avançado está disponível nos planos Pro e Enterprise." }, { status: 403 });
-  }
 
   const { id } = await params;
   const qr = await prisma.qRCode.findFirst({
@@ -20,9 +17,10 @@ export async function GET(_request: Request, { params }: Context) {
   });
   if (!qr) return NextResponse.json({ success: false, message: "QR Code não encontrado." }, { status: 404 });
 
-  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const analyticsDays = subscription.plan.analyticsDays;
+  const since = analyticsDays > 0 ? new Date(Date.now() - analyticsDays * 24 * 60 * 60 * 1000) : undefined;
   const metrics = await prisma.scanMetric.findMany({
-    where: { qrCodeId: qr.id, scannedAt: { gte: since } },
+    where: { qrCodeId: qr.id, ...(since ? { scannedAt: { gte: since } } : {}) },
     orderBy: { scannedAt: "desc" },
     select: { id: true, device: true, country: true, browser: true, scannedAt: true },
   });
@@ -45,7 +43,8 @@ export async function GET(_request: Request, { params }: Context) {
   return NextResponse.json({
     success: true,
     qr,
-    summary: { last24, last30: metrics.length, lifetime: qr.scanCount },
+    plan: { name: subscription.plan.name, analyticsDays },
+    summary: { last24, period: metrics.length, lifetime: qr.scanCount },
     byDay: sortedMap(byDay).sort((a, b) => a.label.localeCompare(b.label)),
     byDevice: sortedMap(byDevice),
     byBrowser: sortedMap(byBrowser),
