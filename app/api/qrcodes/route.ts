@@ -9,6 +9,18 @@ import { createQrSchema } from "@/lib/validation";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const qrSelect = {
+  id: true,
+  name: true,
+  originalUrl: true,
+  slug: true,
+  scanCount: true,
+  campaignId: true,
+  createdAt: true,
+  updatedAt: true,
+  campaign: { select: { id: true, name: true, color: true } },
+} as const;
+
 export async function GET() {
   const auth = await getAuthClaims();
   if (!auth) return NextResponse.json({ success: false, message: "Não autenticado." }, { status: 401 });
@@ -17,18 +29,32 @@ export async function GET() {
     prisma.qRCode.findMany({
       where: { userId: auth.userId },
       orderBy: { createdAt: "desc" },
-      select: { id: true, name: true, originalUrl: true, slug: true, scanCount: true, createdAt: true, updatedAt: true },
+      select: qrSelect,
     }),
     getActiveSubscription(auth.userId),
   ]);
 
+  const plan = subscription.plan;
   return NextResponse.json({
     success: true,
     items,
     plan: {
-      name: subscription.plan.name,
-      qrLimit: subscription.plan.qrLimit,
-      dynamicLinks: subscription.plan.dynamicLinks,
+      name: plan.name,
+      qrLimit: plan.qrLimit,
+      dynamicLinks: plan.dynamicLinks,
+      analyticsDays: plan.analyticsDays,
+      customBranding: plan.customBranding,
+      campaigns: plan.campaigns,
+      scheduledLinks: plan.scheduledLinks,
+      passwordProtection: plan.passwordProtection,
+      reports: plan.reports,
+      bulkGeneration: plan.bulkGeneration,
+      smartRedirect: plan.smartRedirect,
+      customDomains: plan.customDomains,
+      integrations: plan.integrations,
+      apiAccess: plan.apiAccess,
+      webhooks: plan.webhooks,
+      teamSeats: plan.teamSeats,
     },
   });
 }
@@ -57,6 +83,17 @@ export async function POST(request: Request) {
       );
     }
 
+    if (parsed.data.campaignId) {
+      if (!subscription.plan.campaigns) {
+        return NextResponse.json({ success: false, message: "Campanhas estão disponíveis a partir do plano Pro." }, { status: 403 });
+      }
+      const campaign = await prisma.campaign.findFirst({
+        where: { id: parsed.data.campaignId, userId: auth.userId },
+        select: { id: true },
+      });
+      if (!campaign) return NextResponse.json({ success: false, message: "Campanha inválida." }, { status: 400 });
+    }
+
     let slug = nanoid(10);
     for (let attempts = 0; attempts < 4; attempts += 1) {
       const exists = await prisma.qRCode.findUnique({ where: { slug }, select: { id: true } });
@@ -70,8 +107,9 @@ export async function POST(request: Request) {
         originalUrl: parsed.data.originalUrl,
         slug,
         userId: auth.userId,
+        campaignId: parsed.data.campaignId ?? null,
       },
-      select: { id: true, name: true, originalUrl: true, slug: true, scanCount: true, createdAt: true, updatedAt: true },
+      select: qrSelect,
     });
     return NextResponse.json({ success: true, item }, { status: 201 });
   } catch (error) {
