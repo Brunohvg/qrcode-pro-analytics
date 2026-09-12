@@ -34,8 +34,8 @@ export async function GET(_request: Request, { params }: Context) {
 
   if (!item) return NextResponse.json({ success: false, message: "QR Code não encontrado." }, { status: 404 });
 
-  const { passwordHash: _passwordHash, ...safeItem } = item;
-  return NextResponse.json({ success: true, item: safeItem, plan: subscription.plan });
+  const { passwordHash, ...safeItem } = item;
+  return NextResponse.json({ success: true, item: { ...safeItem, passwordProtected: Boolean(passwordHash) }, plan: subscription.plan });
 }
 
 export async function PATCH(request: Request, { params }: Context) {
@@ -53,23 +53,29 @@ export async function PATCH(request: Request, { params }: Context) {
 
   const parsed = updateQrSchema.safeParse(await request.json());
   if (!parsed.success) {
-    return NextResponse.json(
-      { success: false, message: "Dados inválidos.", errors: parsed.error.flatten().fieldErrors },
-      { status: 400 },
-    );
+    return NextResponse.json({ success: false, message: "Dados inválidos.", errors: parsed.error.flatten().fieldErrors }, { status: 400 });
   }
 
   const input = parsed.data;
   const plan = subscription.plan;
+  const advanced = isAdvancedPlan(plan.name);
 
   if (input.originalUrl !== undefined && !plan.dynamicLinks) {
     return NextResponse.json({ success: false, message: "Seu plano não permite alterar links dinâmicos." }, { status: 403 });
   }
 
+  const usesUtm = input.utmSource !== undefined || input.utmMedium !== undefined || input.utmCampaign !== undefined;
+  if (usesUtm && !advanced) {
+    return NextResponse.json({ success: false, message: "UTM automático está disponível a partir do plano Pro." }, { status: 403 });
+  }
+
+  if (input.notifyAtScans !== undefined && !advanced) {
+    return NextResponse.json({ success: false, message: "Alertas por meta de scans estão disponíveis a partir do plano Pro." }, { status: 403 });
+  }
+
   if (input.campaignId !== undefined && !plan.campaigns) {
     return NextResponse.json({ success: false, message: "Campanhas estão disponíveis a partir do plano Pro." }, { status: 403 });
   }
-
   if (input.campaignId) {
     const campaign = await prisma.campaign.findFirst({ where: { id: input.campaignId, userId: auth.userId }, select: { id: true } });
     if (!campaign) return NextResponse.json({ success: false, message: "Campanha inválida." }, { status: 400 });
@@ -84,22 +90,12 @@ export async function PATCH(request: Request, { params }: Context) {
     return NextResponse.json({ success: false, message: "Proteção por senha está disponível a partir do plano Pro." }, { status: 403 });
   }
 
-  const usesSmartRedirect =
-    input.iosUrl !== undefined ||
-    input.androidUrl !== undefined ||
-    input.desktopUrl !== undefined ||
-    input.countryRules !== undefined;
+  const usesSmartRedirect = input.iosUrl !== undefined || input.androidUrl !== undefined || input.desktopUrl !== undefined || input.countryRules !== undefined;
   if (usesSmartRedirect && !plan.smartRedirect) {
     return NextResponse.json({ success: false, message: "Smart Redirect está disponível no plano Business." }, { status: 403 });
   }
 
-  const usesBranding =
-    input.foregroundColor !== undefined ||
-    input.accentColor !== undefined ||
-    input.frameTitle !== undefined ||
-    input.frameText !== undefined ||
-    input.brandName !== undefined ||
-    input.logoUrl !== undefined;
+  const usesBranding = input.foregroundColor !== undefined || input.accentColor !== undefined || input.frameTitle !== undefined || input.frameText !== undefined || input.brandName !== undefined || input.logoUrl !== undefined;
   if (usesBranding && !plan.customBranding) {
     return NextResponse.json({ success: false, message: "Personalização avançada está disponível a partir do plano Pro." }, { status: 403 });
   }
@@ -107,31 +103,21 @@ export async function PATCH(request: Request, { params }: Context) {
   if (input.customDomainId !== undefined && !plan.customDomains) {
     return NextResponse.json({ success: false, message: "Domínio próprio está disponível no plano Business." }, { status: 403 });
   }
-
   if (input.customDomainId) {
-    const domain = await prisma.customDomain.findFirst({
-      where: { id: input.customDomainId, userId: auth.userId, verifiedAt: { not: null } },
-      select: { id: true },
-    });
+    const domain = await prisma.customDomain.findFirst({ where: { id: input.customDomainId, userId: auth.userId, verifiedAt: { not: null } }, select: { id: true } });
     if (!domain) return NextResponse.json({ success: false, message: "Domínio não verificado ou inválido." }, { status: 400 });
   }
 
   const activeFrom = parseDate(input.activeFrom);
   const expiresAt = parseDate(input.expiresAt);
-  if (input.activeFrom && activeFrom === undefined) {
-    return NextResponse.json({ success: false, message: "Data de início inválida." }, { status: 400 });
-  }
-  if (input.expiresAt && expiresAt === undefined) {
-    return NextResponse.json({ success: false, message: "Data de expiração inválida." }, { status: 400 });
-  }
+  if (input.activeFrom && activeFrom === undefined) return NextResponse.json({ success: false, message: "Data de início inválida." }, { status: 400 });
+  if (input.expiresAt && expiresAt === undefined) return NextResponse.json({ success: false, message: "Data de expiração inválida." }, { status: 400 });
   if (activeFrom instanceof Date && expiresAt instanceof Date && activeFrom >= expiresAt) {
     return NextResponse.json({ success: false, message: "A expiração deve ocorrer depois da data de início." }, { status: 400 });
   }
 
   let passwordHash: string | null | undefined;
-  if (input.password !== undefined) {
-    passwordHash = input.password ? await bcrypt.hash(input.password, 12) : null;
-  }
+  if (input.password !== undefined) passwordHash = input.password ? await bcrypt.hash(input.password, 12) : null;
 
   const item = await prisma.qRCode.update({
     where: { id },
@@ -151,12 +137,7 @@ export async function PATCH(request: Request, { params }: Context) {
       iosUrl: input.iosUrl === "" ? null : input.iosUrl,
       androidUrl: input.androidUrl === "" ? null : input.androidUrl,
       desktopUrl: input.desktopUrl === "" ? null : input.desktopUrl,
-      countryRules:
-        input.countryRules === undefined
-          ? undefined
-          : input.countryRules === null
-            ? Prisma.JsonNull
-            : input.countryRules,
+      countryRules: input.countryRules === undefined ? undefined : input.countryRules === null ? Prisma.JsonNull : input.countryRules,
       notifyAtScans: input.notifyAtScans,
       foregroundColor: input.foregroundColor,
       accentColor: input.accentColor,
@@ -171,8 +152,8 @@ export async function PATCH(request: Request, { params }: Context) {
     },
   });
 
-  const { passwordHash: _hidden, ...safeItem } = item;
-  return NextResponse.json({ success: true, item: safeItem, advanced: isAdvancedPlan(plan.name) });
+  const { passwordHash: savedPasswordHash, ...safeItem } = item;
+  return NextResponse.json({ success: true, item: { ...safeItem, passwordProtected: Boolean(savedPasswordHash) }, advanced });
 }
 
 export async function DELETE(request: Request, { params }: Context) {
@@ -181,10 +162,7 @@ export async function DELETE(request: Request, { params }: Context) {
   const auth = await getAuthClaims();
   if (!auth) return NextResponse.json({ success: false }, { status: 401 });
   const { id } = await params;
-
   const deleted = await prisma.qRCode.deleteMany({ where: { id, userId: auth.userId } });
-  if (deleted.count === 0) {
-    return NextResponse.json({ success: false, message: "QR Code não encontrado." }, { status: 404 });
-  }
+  if (deleted.count === 0) return NextResponse.json({ success: false, message: "QR Code não encontrado." }, { status: 404 });
   return NextResponse.json({ success: true });
 }
