@@ -19,7 +19,7 @@ type Item = {
 
 const PRESETS = ["#10B981", "#0EA5E9", "#7C3AED", "#F97316", "#E11D48", "#111827"];
 
-export default function PrintQrClient({ item }: { item: Item }) {
+export default function PrintQrClient({ item, brandingEnabled }: { item: Item; brandingEnabled: boolean }) {
   const [foreground, setForeground] = useState(item.foregroundColor || "#111827");
   const [accent, setAccent] = useState(item.accentColor || "#10B981");
   const [title, setTitle] = useState(item.frameTitle || item.name);
@@ -31,16 +31,24 @@ export default function PrintQrClient({ item }: { item: Item }) {
   const [error, setError] = useState("");
 
   const query = useMemo(() => {
-    const params = new URLSearchParams({ variant: "card", foreground, accent, title, subtitle, brand });
-    if (logo) params.set("logo", logo);
+    const params = new URLSearchParams({ variant: "card" });
+    if (brandingEnabled) {
+      params.set("foreground", foreground);
+      params.set("accent", accent);
+      params.set("title", title);
+      params.set("subtitle", subtitle);
+      params.set("brand", brand);
+      if (logo) params.set("logo", logo);
+    }
     return params.toString();
-  }, [accent, brand, foreground, logo, subtitle, title]);
+  }, [accent, brand, brandingEnabled, foreground, logo, subtitle, title]);
 
   const previewUrl = `/api/qrcodes/${item.id}/image?${query}`;
   const cardDownloadUrl = `${previewUrl}&download=1`;
-  const plainDownloadUrl = `/api/qrcodes/${item.id}/image?variant=plain&foreground=${encodeURIComponent(foreground)}&download=1`;
+  const plainDownloadUrl = `/api/qrcodes/${item.id}/image?variant=plain${brandingEnabled ? `&foreground=${encodeURIComponent(foreground)}` : ""}&download=1`;
 
   async function saveDefaults() {
+    if (!brandingEnabled) return;
     setSaving(true); setMessage(""); setError("");
     try {
       const response = await fetch(`/api/qrcodes/${item.id}`, {
@@ -72,25 +80,28 @@ export default function PrintQrClient({ item }: { item: Item }) {
         <span className="badge">{item.scanCount} scans</span>
       </div>
 
+      {!brandingEnabled && <div className="no-print mb-5 card p-5 border-amber-300/30"><div className="font-black">Personalização avançada disponível no Pro.</div><p className="muted text-sm mt-1">No Gratuito você pode imprimir e baixar o QR com o modelo padrão. Cores, marca, logo e textos personalizados são liberados no Pro.</p><Link href="/planos" className="btn-primary inline-flex mt-4">Ver plano Pro</Link></div>}
       {message && <div className="no-print mb-5 rounded-xl border border-emerald-400/30 bg-emerald-400/10 p-4 text-emerald-200">{message}</div>}
       {error && <div className="no-print mb-5 rounded-xl border border-rose-400/30 bg-rose-400/10 p-4 text-rose-200">{error}</div>}
 
       <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
         <section className="no-print card h-fit p-6">
-          <h2 className="text-lg font-black">Personalização</h2>
-          <label className="mt-5 block text-sm font-bold">Título<input className="input mt-2" value={title} maxLength={44} onChange={(event) => setTitle(event.target.value)} /></label>
-          <label className="mt-4 block text-sm font-bold">Texto abaixo do QR<input className="input mt-2" value={subtitle} maxLength={72} onChange={(event) => setSubtitle(event.target.value)} /></label>
-          <label className="mt-4 block text-sm font-bold">Marca / identificação<input className="input mt-2" value={brand} maxLength={32} onChange={(event) => setBrand(event.target.value)} /></label>
-          <label className="mt-4 block text-sm font-bold">Logo por URL <span className="muted font-normal">(opcional)</span><input className="input mt-2" type="url" value={logo} onChange={(event)=>setLogo(event.target.value)} placeholder="https://seusite.com/logo.png" /></label>
+          <div className="flex items-center justify-between gap-3"><h2 className="text-lg font-black">Personalização</h2>{!brandingEnabled && <span className="badge">Pro</span>}</div>
+          <fieldset disabled={!brandingEnabled} className="disabled:opacity-45">
+            <label className="mt-5 block text-sm font-bold">Título<input className="input mt-2" value={title} maxLength={44} onChange={(event) => setTitle(event.target.value)} /></label>
+            <label className="mt-4 block text-sm font-bold">Texto abaixo do QR<input className="input mt-2" value={subtitle} maxLength={72} onChange={(event) => setSubtitle(event.target.value)} /></label>
+            <label className="mt-4 block text-sm font-bold">Marca / identificação<input className="input mt-2" value={brand} maxLength={32} onChange={(event) => setBrand(event.target.value)} /></label>
+            <label className="mt-4 block text-sm font-bold">Logo por URL <span className="muted font-normal">(opcional)</span><input className="input mt-2" type="url" value={logo} onChange={(event)=>setLogo(event.target.value)} placeholder="https://seusite.com/logo.png" /></label>
 
-          <div className="mt-5"><div className="text-sm font-bold">Cor de destaque</div><div className="mt-3 flex flex-wrap gap-2">{PRESETS.map((color)=><button type="button" key={color} onClick={()=>setAccent(color)} aria-label={`Usar cor ${color}`} className={`h-9 w-9 rounded-full border-2 ${accent===color?"border-white":"border-white/20"}`} style={{backgroundColor:color}} />)}<label className="relative h-9 w-9 overflow-hidden rounded-full border-2 border-white/20" title="Escolher outra cor"><input type="color" value={accent} onChange={(event)=>setAccent(event.target.value.toUpperCase())} className="absolute -inset-2 h-14 w-14 cursor-pointer" /></label></div></div>
-          <label className="mt-5 block text-sm font-bold">Cor do QR<input className="input mt-2 !p-2 h-12" type="color" value={foreground} onChange={(event)=>setForeground(event.target.value.toUpperCase())} /><span className="muted text-xs block mt-2">Se a cor ficar clara demais, a plataforma usa preto automaticamente para preservar a leitura.</span></label>
+            <div className="mt-5"><div className="text-sm font-bold">Cor de destaque</div><div className="mt-3 flex flex-wrap gap-2">{PRESETS.map((color)=><button type="button" key={color} onClick={()=>setAccent(color)} aria-label={`Usar cor ${color}`} className={`h-9 w-9 rounded-full border-2 ${accent===color?"border-white":"border-white/20"}`} style={{backgroundColor:color}} />)}<label className="relative h-9 w-9 overflow-hidden rounded-full border-2 border-white/20" title="Escolher outra cor"><input type="color" value={accent} onChange={(event)=>setAccent(event.target.value.toUpperCase())} className="absolute -inset-2 h-14 w-14 cursor-pointer" /></label></div></div>
+            <label className="mt-5 block text-sm font-bold">Cor do QR<input className="input mt-2 !p-2 h-12" type="color" value={foreground} onChange={(event)=>setForeground(event.target.value.toUpperCase())} /><span className="muted text-xs block mt-2">Se a cor ficar clara demais, a plataforma usa preto automaticamente para preservar a leitura.</span></label>
+          </fieldset>
 
           <div className="mt-6 grid gap-2">
             <button type="button" onClick={()=>window.print()} className="btn-primary w-full">Imprimir cartão</button>
             <a href={cardDownloadUrl} className="btn-secondary w-full text-center">Baixar cartão SVG</a>
             <a href={plainDownloadUrl} className="btn-secondary w-full text-center">Baixar QR puro</a>
-            <button type="button" onClick={()=>void saveDefaults()} disabled={saving} className="btn-secondary w-full">{saving ? "Salvando..." : "Salvar como padrão"}</button>
+            {brandingEnabled && <button type="button" onClick={()=>void saveDefaults()} disabled={saving} className="btn-secondary w-full">{saving ? "Salvando..." : "Salvar como padrão"}</button>}
           </div>
 
           <div className="mt-6 rounded-xl border border-white/10 bg-white/5 p-4 text-xs leading-5 text-slate-300"><strong>Destino atual:</strong><div className="mt-1 break-all text-slate-400">{item.originalUrl}</div></div>
