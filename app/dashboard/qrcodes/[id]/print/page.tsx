@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { getAuthClaims } from "@/lib/auth";
+import { getActiveSubscription } from "@/lib/plans";
 import { prisma } from "@/lib/prisma";
 import PrintQrClient from "./print-client";
 
@@ -12,23 +13,26 @@ export default async function PrintQrPage({ params }: PageProps) {
   if (!auth) redirect("/login");
 
   const { id } = await params;
-  const item = await prisma.qRCode.findFirst({
-    where: { id, userId: auth.userId },
-    select: {
-      id: true,
-      name: true,
-      originalUrl: true,
-      slug: true,
-      scanCount: true,
-      foregroundColor: true,
-      accentColor: true,
-      frameTitle: true,
-      frameText: true,
-      brandName: true,
-      logoUrl: true,
-    },
-  });
+  const [item, subscription] = await Promise.all([
+    prisma.qRCode.findFirst({
+      where: { id, userId: auth.userId },
+      select: {
+        id: true,
+        name: true,
+        originalUrl: true,
+        slug: true,
+        scanCount: true,
+        foregroundColor: true,
+        accentColor: true,
+        frameTitle: true,
+        frameText: true,
+        brandName: true,
+        logoUrl: true,
+      },
+    }),
+    getActiveSubscription(auth.userId),
+  ]);
 
   if (!item) notFound();
-  return <PrintQrClient item={item} />;
+  return <PrintQrClient item={item} brandingEnabled={subscription.plan.customBranding} />;
 }
