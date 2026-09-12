@@ -16,8 +16,23 @@ export type PlanCapability =
   | "webhooks";
 
 export async function ensureFreeSubscription(userId: string) {
+  const now = new Date();
+
+  await prisma.subscription.updateMany({
+    where: {
+      userId,
+      status: "ACTIVE",
+      activeUntil: { lte: now },
+    },
+    data: { status: "EXPIRED" },
+  });
+
   const current = await prisma.subscription.findFirst({
-    where: { userId, status: "ACTIVE" },
+    where: {
+      userId,
+      status: "ACTIVE",
+      OR: [{ activeUntil: null }, { activeUntil: { gt: now } }],
+    },
     orderBy: { createdAt: "desc" },
     include: { plan: true },
   });
