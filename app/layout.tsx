@@ -15,7 +15,8 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           <div className="shell flex h-16 items-center justify-between gap-4">
             <Link href="/" className="font-black tracking-tight text-lg">QR Metrics <span className="text-emerald-300">Pro</span></Link>
             <nav className="flex items-center gap-2 text-sm">
-              <Link className="hidden sm:inline-flex btn-secondary !py-2 !px-3" href="/ferramentas/whatsapp">WhatsApp</Link>
+              <Link className="hidden lg:inline-flex btn-secondary !py-2 !px-3" href="/ferramentas/whatsapp">WhatsApp</Link>
+              <Link className="hidden md:inline-flex btn-secondary !py-2 !px-3" href="/dashboard/analytics">Analytics</Link>
               <Link className="btn-secondary !py-2 !px-3" href="/planos">Planos</Link>
               <Link className="btn-primary !py-2 !px-3" href="/dashboard">Dashboard</Link>
             </nav>
