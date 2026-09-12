@@ -1,12 +1,14 @@
 import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getAuthClaims } from "@/lib/auth";
+import { assertPublicHttpUrl } from "@/lib/network-security";
 import { getActiveSubscription } from "@/lib/plans";
 import { prisma } from "@/lib/prisma";
 import { rejectCrossSiteMutation } from "@/lib/security";
 import { encryptSecret } from "@/lib/secrets";
 import { webhookSchema } from "@/lib/validation";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
@@ -32,8 +34,18 @@ export async function POST(request: Request) {
   if (!subscription.plan.webhooks) {
     return NextResponse.json({ success: false, message: "Webhooks estão disponíveis no plano Business." }, { status: 403 });
   }
+
   const parsed = webhookSchema.safeParse(await request.json());
   if (!parsed.success) return NextResponse.json({ success: false, message: "Webhook inválido." }, { status: 400 });
+
+  try {
+    await assertPublicHttpUrl(parsed.data.url);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Destino do webhook não permitido." },
+      { status: 400 },
+    );
+  }
 
   const secret = randomBytes(32).toString("base64url");
   const item = await prisma.webhook.create({
