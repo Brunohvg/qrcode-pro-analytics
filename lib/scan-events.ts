@@ -1,4 +1,5 @@
 import { createHmac } from "node:crypto";
+import { assertPublicHttpUrl } from "@/lib/network-security";
 import { prisma } from "@/lib/prisma";
 import { decryptSecret } from "@/lib/secrets";
 
@@ -17,11 +18,13 @@ type ScanEvent = {
 };
 
 async function sendWebhook(url: string, encryptedSecret: string, event: ScanEvent): Promise<void> {
+  const safeUrl = await assertPublicHttpUrl(url);
   const body = JSON.stringify({ type: "scan.created", data: event });
   const secret = decryptSecret(encryptedSecret);
   const signature = createHmac("sha256", secret).update(body).digest("hex");
-  await fetch(url, {
+  const response = await fetch(safeUrl, {
     method: "POST",
+    redirect: "error",
     headers: {
       "Content-Type": "application/json",
       "User-Agent": "QR-Metrics-Pro-Webhook/1.0",
@@ -31,77 +34,66 @@ async function sendWebhook(url: string, encryptedSecret: string, event: ScanEven
     body,
     signal: AbortSignal.timeout(2500),
   });
+  if (!response.ok) throw new Error(`Webhook respondeu HTTP ${response.status}.`);
 }
 
-async function sendGoogleAnalytics(
-  measurementId: string,
-  encryptedSecret: string,
-  event: ScanEvent,
-): Promise<void> {
+async function sendGoogleAnalytics(measurementId: string, encryptedSecret: string, event: ScanEvent): Promise<void> {
   const apiSecret = decryptSecret(encryptedSecret);
   const endpoint = new URL("https://www.google-analytics.com/mp/collect");
   endpoint.searchParams.set("measurement_id", measurementId);
   endpoint.searchParams.set("api_secret", apiSecret);
 
-  await fetch(endpoint, {
+  const response = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       client_id: `qr.${event.id}`,
-      events: [
-        {
-          name: "qr_code_scan",
-          params: {
-            qr_code_id: event.qrCodeId,
-            qr_code_name: event.qrName,
-            qr_slug: event.slug,
-            device: event.device.toLowerCase(),
-            browser: event.browser,
-            country: event.country,
-            destination: event.destination,
-            engagement_time_msec: 1,
-          },
+      events: [{
+        name: "qr_code_scan",
+        params: {
+          qr_code_id: event.qrCodeId,
+          qr_code_name: event.qrName,
+          qr_slug: event.slug,
+          device: event.device.toLowerCase(),
+          browser: event.browser,
+          country: event.country,
+          destination: event.destination,
+          engagement_time_msec: 1,
         },
-      ],
+      }],
     }),
     signal: AbortSignal.timeout(2500),
   });
+  if (!response.ok) throw new Error(`GA4 respondeu HTTP ${response.status}.`);
 }
 
-async function sendMeta(
-  pixelId: string,
-  encryptedToken: string,
-  event: ScanEvent,
-): Promise<void> {
+async function sendMeta(pixelId: string, encryptedToken: string, event: ScanEvent): Promise<void> {
   const accessToken = decryptSecret(encryptedToken);
   const endpoint = new URL(`https://graph.facebook.com/${encodeURIComponent(pixelId)}/events`);
   endpoint.searchParams.set("access_token", accessToken);
 
-  await fetch(endpoint, {
+  const response = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      data: [
-        {
-          event_name: "QRCodeScan",
-          event_time: Math.floor(new Date(event.scannedAt).getTime() / 1000),
-          event_id: event.id,
-          action_source: "website",
-          event_source_url: event.destination,
-          user_data: {
-            client_user_agent: event.userAgent,
-          },
-          custom_data: {
-            qr_code_id: event.qrCodeId,
-            qr_code_name: event.qrName,
-            device: event.device,
-            country: event.country,
-          },
+      data: [{
+        event_name: "QRCodeScan",
+        event_time: Math.floor(new Date(event.scannedAt).getTime() / 1000),
+        event_id: event.id,
+        action_source: "website",
+        event_source_url: event.destination,
+        user_data: { client_user_agent: event.userAgent },
+        custom_data: {
+          qr_code_id: event.qrCodeId,
+          qr_code_name: event.qrName,
+          device: event.device,
+          country: event.country,
         },
-      ],
+      }],
     }),
     signal: AbortSignal.timeout(2500),
   });
+  if (!response.ok) throw new Error(`Meta respondeu HTTP ${response.status}.`);
 }
 
 export async function dispatchScanEvents(event: ScanEvent): Promise<void> {
@@ -122,19 +114,15 @@ export async function dispatchScanEvents(event: ScanEvent): Promise<void> {
   });
 
   if (integration?.gaMeasurementId && integration.gaApiSecretEncrypted) {
-    jobs.push(
-      sendGoogleAnalytics(integration.gaMeasurementId, integration.gaApiSecretEncrypted, event).catch((error) => {
-        console.error("GA4_SCAN_EVENT_ERROR", error);
-      }),
-    );
+    jobs.push(sendGoogleAnalytics(integration.gaMeasurementId, integration.gaApiSecretEncrypted, event).catch((error) => {
+      console.error("GA4_SCAN_EVENT_ERROR", error);
+    }));
   }
 
   if (integration?.metaPixelId && integration.metaAccessTokenEncrypted) {
-    jobs.push(
-      sendMeta(integration.metaPixelId, integration.metaAccessTokenEncrypted, event).catch((error) => {
-        console.error("META_SCAN_EVENT_ERROR", error);
-      }),
-    );
+    jobs.push(sendMeta(integration.metaPixelId, integration.metaAccessTokenEncrypted, event).catch((error) => {
+      console.error("META_SCAN_EVENT_ERROR", error);
+    }));
   }
 
   await Promise.allSettled(jobs);
