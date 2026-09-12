@@ -112,7 +112,8 @@ export default function DashboardClient({ email }: { email: string }) {
             <div className="flex flex-wrap gap-2 mt-4">
               <button className="btn-secondary !py-2 !px-3 text-sm" onClick={()=>setEdit({id:item.id,name:item.name,originalUrl:item.originalUrl})}>Editar</button>
               <Link className="btn-secondary !py-2 !px-3 text-sm" href={`/dashboard/analytics/${item.id}`}>Analytics</Link>
-              <a className="btn-secondary !py-2 !px-3 text-sm" href={`/api/qrcodes/${item.id}/image?download=1`}>Baixar SVG</a>
+              <Link className="btn-secondary !py-2 !px-3 text-sm" href={`/dashboard/qrcodes/${item.id}/print`}>Personalizar / imprimir</Link>
+              <a className="btn-secondary !py-2 !px-3 text-sm" href={`/api/qrcodes/${item.id}/image?variant=plain&download=1`}>QR puro</a>
               <button className="btn-secondary !py-2 !px-3 text-sm !text-rose-300" onClick={()=>void remove(item.id)}>Excluir</button>
             </div>
           </div>
