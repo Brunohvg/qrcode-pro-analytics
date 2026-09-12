@@ -9,6 +9,20 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: qrcode
+          POSTGRES_USER: qrcode
+          POSTGRES_PASSWORD: qrcode
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U qrcode -d qrcode"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     env:
       DATABASE_URL: postgresql://qrcode:qrcode@127.0.0.1:5432/qrcode?schema=public
       AUTH_SECRET: ci-only-secret-with-more-than-thirty-two-characters
@@ -24,6 +38,8 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Generate Prisma Client
         run: npx prisma generate
+      - name: Validate database migrations
+        run: npx prisma migrate deploy
       - name: Typecheck
         run: npm run typecheck
       - name: Build Next.js
