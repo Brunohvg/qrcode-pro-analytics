@@ -26,5 +26,7 @@ jobs:
         run: npx prisma generate
       - name: Typecheck
         run: npm run typecheck
-      - name: Build
+      - name: Build Next.js
         run: npm run build
+      - name: Build production Docker image without runtime environment
+        run: docker build --no-cache -t qrcode-pro-analytics-ci .
