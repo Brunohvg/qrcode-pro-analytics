@@ -64,7 +64,7 @@ export default function SiteHeader() {
           <Link className="btn-secondary !py-2 !px-3" href="/dashboard/analytics">Analytics</Link>
           <Link className="hidden lg:inline-flex btn-secondary !py-2 !px-3" href="/billing">Assinatura</Link>
           <Link className="btn-secondary !py-2 !px-3" href="/planos">Planos</Link>
-          {session.admin && <Link className="btn-secondary !py-2 !px-3 border-amber-300/30 text-amber-200" href="/admin/billing">Admin</Link>}
+          {session.admin && <Link className="btn-secondary !py-2 !px-3 border-amber-300/30 text-amber-200" href="/admin">Admin</Link>}
           <Link className="btn-primary !py-2 !px-3" href="/dashboard">Dashboard</Link>
         </nav>
 
@@ -111,7 +111,7 @@ export default function SiteHeader() {
               })}
 
               {session.admin && (
-                <Link href="/admin/billing" className="min-h-12 rounded-xl border border-amber-300/30 bg-amber-300/10 px-4 py-3 font-black text-amber-100 flex items-center justify-between">
+                <Link href="/admin" className="min-h-12 rounded-xl border border-amber-300/30 bg-amber-300/10 px-4 py-3 font-black text-amber-100 flex items-center justify-between">
                   <span>Admin do SaaS</span><span aria-hidden="true">›</span>
                 </Link>
               )}
