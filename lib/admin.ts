@@ -6,6 +6,12 @@ import { getAuthClaims } from "@/lib/auth";
 export const ADMIN_ACCESS_COOKIE_NAME = "qrcode_admin_access";
 const ADMIN_SESSION_TTL_SECONDS = 60 * 60 * 2;
 
+type AdminIdentity = {
+  userId: string;
+  email: string;
+  role: "USER" | "ADMIN";
+};
+
 function configuredAdminEmails(): Set<string> {
   return new Set(
     (process.env.DEVELOPER_ADMIN_EMAILS ?? "")
@@ -66,14 +72,14 @@ export function adminAccessCookieOptions() {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "strict" as const,
-    path: "/admin",
+    path: "/",
     maxAge: ADMIN_SESSION_TTL_SECONDS,
   };
 }
 
-export async function hasDeveloperAdminSession(claims?: { userId: string; email: string } | null): Promise<boolean> {
+export async function hasDeveloperAdminSession(claims?: AdminIdentity | null): Promise<boolean> {
   const current = claims ?? await getAuthClaims();
-  if (!current || !isDeveloperAdmin(current as { email: string; role: "USER" | "ADMIN" })) return false;
+  if (!current || !isDeveloperAdmin(current)) return false;
   if (!isAdminPasswordConfigured()) return false;
   const store = await cookies();
   const token = store.get(ADMIN_ACCESS_COOKIE_NAME)?.value;
