@@ -6,6 +6,6 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminBillingPage() {
   const admin = await requireDeveloperAdmin();
-  if (!admin) redirect("/dashboard");
+  if (!admin) redirect("/admin/login");
   return <AdminBillingClient adminEmail={admin.email} />;
 }
