@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminPage() {
   const admin = await requireDeveloperAdmin();
-  if (!admin) redirect("/dashboard");
+  if (!admin) redirect("/admin/login");
 
   return (
     <main className="shell py-10 md:py-14">
